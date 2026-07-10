@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Design Review Annotator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F8F7F4; color: #2C2C2A; padding: 24px; }
+  h1 { font-size: 16px; font-weight: 500; margin-bottom: 16px; }
+  button { font-family: inherit; font-size: 12px; padding: 4px 12px; border-radius: 8px; border: 0.5px solid #B4B2A9; background: white; color: #2C2C2A; cursor: pointer; }
+  button:hover { background: #F1EFE8; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  input[type="text"] { font-family: inherit; font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 0.5px solid #B4B2A9; background: white; color: #2C2C2A; outline: none; width: 100%; }
+  input[type="text"]:focus { border-color: #888780; }
+  #toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .type-btn { font-size: 12px; padding: 4px 10px; border-radius: 20px; cursor: pointer; font-weight: 500; }
+  .action-btns { margin-left: auto; display: flex; gap: 8px; align-items: stretch; }
+  .blue-btn { background: #E6F1FB; color: #0C447C; border-color: #185FA5; display: flex; align-items: center; gap: 6px; padding: 6px 14px; }
+  .plain-btn { padding: 6px 14px; }
+  #session-bar { display: none; align-items: center; gap: 6px; margin-bottom: 10px; padding: 8px 12px; background: #F1EFE8; border-radius: 8px; border: 0.5px solid #D3D1C7; }
+  #session-label { font-size: 13px; color: #5F5E5A; flex: 1; text-align: center; }
+  .divider { width: 0.5px; background: #D3D1C7; height: 20px; margin: 0 2px; }
+  .del-btn { color: #A32D2D; border-color: #E24B4A; }
+  #dropzone { border: 1.5px dashed #B4B2A9; border-radius: 12px; min-height: 300px; display: flex; align-items: center; justify-content: center; position: relative; background: #F1EFE8; cursor: pointer; overflow: hidden; }
+  #drop-hint { display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; user-select: none; }
+  #drop-hint p { color: #5F5E5A; font-size: 14px; }
+  #main-canvas { display: none; max-width: 100%; cursor: crosshair; }
+  #pin-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  #status-msg { display: none; margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+  #note-panel { display: none; margin-top: 10px; padding: 12px 14px; background: white; border: 0.5px solid #D3D1C7; border-radius: 8px; }
+  #note-panel p { font-size: 12px; color: #5F5E5A; margin-bottom: 6px; }
+  #note-row { display: flex; gap: 8px; }
+  #issues-list { margin-top: 14px; }
+  .issue-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; margin-bottom: 6px; background: white; border: 0.5px solid #D3D1C7; border-radius: 0 8px 8px 0; }
+  .issue-num { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: white; flex-shrink: 0; }
+  .issue-tag { font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 500; }
+  .issue-note { font-size: 13px; margin: 4px 0 0; color: #2C2C2A; }
+</style>
+</head>
+<body>
+
+<h1>Design Review Annotator</h1>
+
+<div id="toolbar">
+  <span style="font-size:13px;color:#5F5E5A;margin-right:4px;">Mark as:</span>
+  <button id="btn-bug"      class="type-btn" onclick="setType('bug')"      style="border:1.5px solid #E24B4A;background:#FCEBEB;color:#A32D2D;">🔴 Bug</button>
+  <button id="btn-spacing"  class="type-btn" onclick="setType('spacing')"  style="border:1.5px solid #BA7517;background:#FAEEDA;color:#854F0B;">🟠 Spacing</button>
+  <button id="btn-copy"     class="type-btn" onclick="setType('copy')"     style="border:1.5px solid #185FA5;background:#E6F1FB;color:#0C447C;">🔵 Copy</button>
+  <button id="btn-style"    class="type-btn" onclick="setType('style')"    style="border:1.5px solid #534AB7;background:#EEEDFE;color:#3C3489;">🟣 Style</button>
+  <button id="btn-question" class="type-btn" onclick="setType('question')" style="border:1.5px solid #0F6E56;background:#E1F5EE;color:#085041;">🟢 Question</button>
+  <div class="action-btns">
+    <button class="plain-btn" onclick="clearAll()">Clear</button>
+    <button id="copy-btn" class="blue-btn" onclick="copyToClipboard()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="14" rx="2"/><path d="M6 2h14a2 2 0 012 2v14"/><path d="M6 15l3-3 2 2 3-4 3 5"/><circle cx="8.5" cy="11.5" r="1"/></svg>
+      Copy image
+    </button>
+    <button id="dl-btn" class="plain-btn" onclick="downloadImage()" style="display:flex;align-items:center;gap:6px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+      Download
+    </button>
+  </div>
+</div>
+
+<div id="session-bar">
+  <button id="prev-btn" onclick="goSession(-1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+  <span id="session-label"></span>
+  <button id="next-btn" onclick="goSession(1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="divider"></div>
+  <button onclick="addSession()" title="Add new image"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button class="del-btn" onclick="deleteSession()" title="Remove this image"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg></button>
+</div>
+
+<div id="dropzone">
+  <div id="drop-hint">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M3 15l5-5 4 4 3-3 6 6"/></svg>
+    <p>Drop or click to upload a screenshot</p>
+  </div>
+  <input type="file" id="file-input" accept="image/*" style="display:none;" />
+  <canvas id="main-canvas"></canvas>
+  <div id="pin-layer"></div>
+</div>
+
+<div id="status-msg"></div>
+
+<div id="note-panel">
+  <p id="note-label"></p>
+  <div id="note-row">
+    <input type="text" id="note-input" placeholder="Describe the issue..." />
+    <button onclick="saveNote()">Add</button>
+    <button onclick="cancelNote()">Cancel</button>
+  </div>
+</div>
+
+<div id="issues-list"></div>
+
+<script>
+const TC = {
+  bug:      { color:'#E24B4A', bg:'#FCEBEB', label:'Bug' },
+  spacing:  { color:'#BA7517', bg:'#FAEEDA', label:'Spacing' },
+  copy:     { color:'#185FA5', bg:'#E6F1FB', label:'Copy' },
+  style:    { color:'#534AB7', bg:'#EEEDFE', label:'Style' },
+  question: { color:'#0F6E56', bg:'#E1F5EE', label:'Question' },
+};
+
+const COPY_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="14" rx="2"/><path d="M6 2h14a2 2 0 012 2v14"/><path d="M6 15l3-3 2 2 3-4 3 5"/><circle cx="8.5" cy="11.5" r="1"/></svg> Copy image';
+const DL_ICON   = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M7 11l5 5 5-5"/><path d="M5 21h14"/></svg> Download';
+
+let curType = 'bug', pending = null, sessions = [], curIdx = -1;
+function mkSession() { return { img: null, anns: [], name: '' }; }
+
+const dz = document.getElementById('dropzone');
+const cv = document.getElementById('main-canvas');
+const cx = cv.getContext('2d');
+const pl = document.getElementById('pin-layer');
+const fi = document.getElementById('file-input');
+
+// ── Type selector ──────────────────────────────────────────────
+function setType(t) {
+  curType = t;
+  Object.keys(TC).forEach(k => {
+    const b = document.getElementById('btn-' + k);
+    b.style.opacity   = k === t ? '1' : '0.4';
+    b.style.transform = k === t ? 'scale(1.06)' : 'scale(1)';
+  });
+}
+setType('bug');
+
+// ── File loading ───────────────────────────────────────────────
+fi.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+dz.addEventListener('dragenter', e => { e.preventDefault(); e.stopPropagation(); dz.style.borderColor = '#888780'; });
+dz.addEventListener('dragover',  e => { e.preventDefault(); e.stopPropagation(); });
+dz.addEventListener('dragleave', e => { e.stopPropagation(); dz.style.borderColor = '#B4B2A9'; });
+dz.addEventListener('drop', e => {
+  e.preventDefault(); e.stopPropagation();
+  dz.style.borderColor = '#B4B2A9';
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+dz.addEventListener('click', e => {
+  if (e.target === fi) return;
+  const noImage = sessions.length === 0 || curIdx === -1 || !sessions[curIdx] || !sessions[curIdx].img;
+  if (noImage) { fi.value = ''; fi.click(); return; }
+  // annotation click
+  const cr = cv.getBoundingClientRect();
+  const x = e.clientX - cr.left, y = e.clientY - cr.top;
+  if (x < 0 || y < 0 || x > cr.width || y > cr.height) return;
+  pending = { xp: x / cr.width, yp: y / cr.height, type: curType, id: Date.now() };
+  showNote();
+  showPending(x, y, cr);
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    const img = new Image();
+    img.onload = () => {
+      if (curIdx === -1 || sessions[curIdx].img !== null) {
+        sessions.push(mkSession());
+        curIdx = sessions.length - 1;
+      }
+      sessions[curIdx].img  = img;
+      sessions[curIdx].name = file.name.replace(/\.[^.]+$/, '') || ('Screen ' + (curIdx + 1));
+      sessions[curIdx].anns = [];
+      renderSession();
+      updateSessionBar();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Session management ─────────────────────────────────────────
+function addSession() {
+  cancelNote();
+  sessions.push(mkSession());
+  curIdx = sessions.length - 1;
+  renderSession(); updateSessionBar();
+  fi.value = ''; fi.click();
+}
+
+function deleteSession() {
+  if (sessions.length === 0) return;
+  const name = sessions[curIdx].name || ('Image ' + (curIdx + 1));
+  if (!confirm('Remove "' + name + '" from history?')) return;
+  sessions.splice(curIdx, 1);
+  curIdx = sessions.length === 0 ? -1 : Math.min(curIdx, sessions.length - 1);
+  renderSession(); updateSessionBar();
+}
+
+function goSession(dir) {
+  cancelNote();
+  const next = curIdx + dir;
+  if (next < 0 || next >= sessions.length) return;
+  curIdx = next;
+  renderSession(); updateSessionBar();
+}
+
+function updateSessionBar() {
+  const bar = document.getElementById('session-bar');
+  if (sessions.length === 0 || (sessions.length === 1 && !sessions[0].img)) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const s = sessions[curIdx];
+  document.getElementById('session-label').textContent = (s ? s.name || ('Image ' + (curIdx + 1)) : '') + ' (' + (curIdx + 1) + ' / ' + sessions.length + ')';
+  document.getElementById('prev-btn').disabled = curIdx === 0;
+  document.getElementById('next-btn').disabled = curIdx === sessions.length - 1;
+}
+
+function renderSession() {
+  const s = curIdx >= 0 ? sessions[curIdx] : null;
+  pl.innerHTML = ''; pending = null;
+  document.getElementById('note-panel').style.display  = 'none';
+  document.getElementById('status-msg').style.display  = 'none';
+  if (!s || !s.img) {
+    cv.style.display = 'none';
+    document.getElementById('drop-hint').style.display = 'flex';
+    dz.style.minHeight = '300px';
+    dz.style.cursor = 'pointer';
+    renderList([]); return;
+  }
+  document.getElementById('drop-hint').style.display = 'none';
+  const maxW = dz.clientWidth || 900;
+  const sc = Math.min(maxW / s.img.width, 700 / s.img.height, 1);
+  cv.width  = Math.round(s.img.width  * sc);
+  cv.height = Math.round(s.img.height * sc);
+  cv.style.display = 'block';
+  dz.style.minHeight = cv.height + 'px';
+  dz.style.cursor = 'crosshair';
+  cx.drawImage(s.img, 0, 0, cv.width, cv.height);
+  s.anns.forEach(a => drawPin(a));
+  renderList(s.anns);
+}
+
+// ── Annotation pins ────────────────────────────────────────────
+function showPending(x, y, cr) {
+  document.getElementById('_pp') && document.getElementById('_pp').remove();
+  const dzr = dz.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.id = '_pp';
+  d.style.cssText = 'position:absolute;left:' + (x + (cr.left - dzr.left)) + 'px;top:' + (y + (cr.top - dzr.top)) + 'px;width:22px;height:22px;border-radius:50%;background:' + TC[curType].color + ';border:2.5px solid white;transform:translate(-50%,-50%);pointer-events:none;z-index:10;opacity:0.5;';
+  pl.appendChild(d);
+}
+
+function showNote() {
+  document.getElementById('note-label').textContent = TC[curType].label + ' — type a note and press Enter';
+  document.getElementById('note-input').value = '';
+  document.getElementById('note-panel').style.display = 'block';
+  setTimeout(() => document.getElementById('note-input').focus(), 40);
+}
+
+document.getElementById('note-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveNote();
+  if (e.key === 'Escape') cancelNote();
+});
+
+function saveNote() {
+  if (!pending) return;
+  const note = document.getElementById('note-input').value.trim();
+  if (!note) { document.getElementById('note-input').focus(); return; }
+  const s = sessions[curIdx];
+  const a = { ...pending, note, num: s.anns.length + 1 };
+  s.anns.push(a);
+  document.getElementById('note-panel').style.display = 'none';
+  document.getElementById('_pp') && document.getElementById('_pp').remove();
+  pending = null;
+  drawPin(a); renderList(s.anns);
+}
+
+function cancelNote() {
+  document.getElementById('note-panel').style.display = 'none';
+  document.getElementById('_pp') && document.getElementById('_pp').remove();
+  pending = null;
+}
+
+function drawPin(a) {
+  const cr = cv.getBoundingClientRect(), dzr = dz.getBoundingClientRect();
+  const px = a.xp * cr.width  + (cr.left - dzr.left);
+  const py = a.yp * cr.height + (cr.top  - dzr.top);
+  const d = document.createElement('div');
+  d.id = 'pin-' + a.id;
+  d.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:22px;height:22px;border-radius:50%;background:' + TC[a.type].color + ';border:2.5px solid white;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;pointer-events:none;z-index:9;box-shadow:0 1px 4px rgba(0,0,0,.2);';
+  d.textContent = a.num;
+  pl.appendChild(d);
+}
+
+// ── Issues list ────────────────────────────────────────────────
+function renderList(anns) {
+  const el = document.getElementById('issues-list');
+  if (!anns || !anns.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<p style="font-size:12px;color:#5F5E5A;margin:0 0 8px;">' + anns.length + ' issue' + (anns.length > 1 ? 's' : '') + ' marked</p>'
+    + anns.map(a =>
+      '<div class="issue-row" id="row-' + a.id + '" style="border-left:3px solid ' + TC[a.type].color + ';">'
+      + '<span class="issue-num" style="background:' + TC[a.type].color + ';">' + a.num + '</span>'
+      + '<div style="flex:1;" id="content-' + a.id + '">'
+      + '<span class="issue-tag" style="background:' + TC[a.type].bg + ';color:' + TC[a.type].color + ';">' + TC[a.type].label + '</span>'
+      + '<p class="issue-note">' + a.note + '</p></div>'
+      + '<button onclick="editAnn(' + a.id + ')" style="font-size:11px;padding:2px 7px;" title="Edit">'
+      + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+      + '</button>'
+      + '<button onclick="removeAnn(' + a.id + ')" style="font-size:11px;padding:2px 7px;" title="Remove">'
+      + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+      + '</button>'
+      + '</div>'
+    ).join('');
+}
+
+function editAnn(id) {
+  const s = sessions[curIdx]; if (!s) return;
+  const a = s.anns.find(x => x.id === id); if (!a) return;
+  const content = document.getElementById('content-' + id);
+  content.innerHTML = '<span class="issue-tag" style="background:' + TC[a.type].bg + ';color:' + TC[a.type].color + ';">' + TC[a.type].label + '</span>'
+    + '<div style="display:flex;gap:6px;margin-top:6px;">'
+    + '<input type="text" id="edit-input-' + id + '" value="' + a.note.replace(/"/g, '&quot;') + '" style="flex:1;font-size:13px;padding:4px 8px;border-radius:6px;border:0.5px solid #B4B2A9;font-family:inherit;" />'
+    + '<button onclick="saveEdit(' + id + ')" style="font-size:11px;padding:2px 10px;">Save</button>'
+    + '<button onclick="cancelEdit(' + id + ')" style="font-size:11px;padding:2px 8px;">Cancel</button>'
+    + '</div>';
+  const inp = document.getElementById('edit-input-' + id);
+  inp.focus(); inp.select();
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveEdit(id);
+    if (e.key === 'Escape') cancelEdit(id);
+  });
+}
+
+function saveEdit(id) {
+  const s = sessions[curIdx]; if (!s) return;
+  const a = s.anns.find(x => x.id === id); if (!a) return;
+  const inp = document.getElementById('edit-input-' + id);
+  const val = inp ? inp.value.trim() : '';
+  if (val) a.note = val;
+  renderList(s.anns);
+}
+
+function cancelEdit(id) {
+  const s = sessions[curIdx]; if (!s) return;
+  renderList(s.anns);
+}
+
+function removeAnn(id) {
+  const s = sessions[curIdx]; if (!s) return;
+  s.anns = s.anns.filter(a => a.id !== id);
+  s.anns.forEach((a, i) => a.num = i + 1);
+  pl.querySelectorAll('[id^="pin-"]').forEach(p => p.remove());
+  s.anns.forEach(a => drawPin(a));
+  renderList(s.anns);
+}
+
+function clearAll() {
+  const s = sessions[curIdx]; if (!s) return;
+  s.anns = []; pl.innerHTML = '';
+  document.getElementById('status-msg').style.display = 'none';
+  renderList([]);
+}
+
+// ── Status message ─────────────────────────────────────────────
+function showStatus(msg, ok) {
+  const el = document.getElementById('status-msg');
+  el.textContent  = msg;
+  el.style.display    = 'block';
+  el.style.background = ok ? '#EAF3DE' : '#FAEEDA';
+  el.style.color      = ok ? '#3B6D11' : '#854F0B';
+  el.style.border     = '0.5px solid ' + (ok ? '#97C459' : '#EF9F27');
+}
+
+// ── Export ─────────────────────────────────────────────────────
+function wrapText(c, text, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (c.measureText(test).width > maxWidth && line) { lines.push(line); line = word; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function buildExportCanvas(s) {
+  const PAD = 40, LINE_H = 18, CIRCLE_R = 12, NOTE_X = PAD + 88, NOTE_FONT = '400 13px sans-serif';
+  const sc = Math.min((dz.clientWidth || 900) / s.img.width, 700 / s.img.height, 1);
+  const w = Math.round(s.img.width * sc), h = Math.round(s.img.height * sc);
+  const canvasW = w + PAD * 2;
+  const maxNoteW = canvasW - NOTE_X - PAD;
+  const measurer = document.createElement('canvas').getContext('2d');
+  measurer.font = NOTE_FONT;
+  const rowData = s.anns.map(a => {
+    const lines = wrapText(measurer, a.note, maxNoteW);
+    const rowH  = Math.max(CIRCLE_R * 2 + 8, lines.length * LINE_H + 8);
+    return { a, lines, rowH };
+  });
+  let listH = 0;
+  if (s.anns.length) { listH = 28; rowData.forEach(r => listH += r.rowH + 6); listH += 16; }
+  const ec = document.createElement('canvas');
+  ec.width = canvasW; ec.height = h + PAD * 2 + listH;
+  const c = ec.getContext('2d');
+  c.fillStyle = '#F1EFE8'; c.fillRect(0, 0, ec.width, ec.height);
+  c.drawImage(s.img, PAD, PAD, w, h);
+  c.strokeStyle = '#B4B2A9'; c.lineWidth = 1; c.strokeRect(PAD, PAD, w, h);
+  s.anns.forEach(a => {
+    const px = PAD + a.xp * w, py = PAD + a.yp * h;
+    c.beginPath(); c.arc(px, py, CIRCLE_R, 0, Math.PI * 2);
+    c.fillStyle = TC[a.type].color; c.fill();
+    c.strokeStyle = 'white'; c.lineWidth = 2.5; c.stroke();
+    c.fillStyle = 'white'; c.font = 'bold 11px sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(String(a.num), px, py);
+  });
+  if (s.anns.length) {
+    let cy = h + PAD * 2 + 20;
+    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.fillStyle = '#5F5E5A'; c.font = '500 13px sans-serif';
+    c.fillText(s.anns.length + ' issue' + (s.anns.length > 1 ? 's' : ''), PAD, cy);
+    cy += 14;
+    rowData.forEach(({ a, lines, rowH }) => {
+      const firstLineY = cy + CIRCLE_R + 4;
+      c.beginPath(); c.arc(PAD + CIRCLE_R, cy + CIRCLE_R, CIRCLE_R, 0, Math.PI * 2);
+      c.fillStyle = TC[a.type].color; c.fill();
+      c.fillStyle = 'white'; c.font = 'bold 10px sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(a.num), PAD + CIRCLE_R, cy + CIRCLE_R);
+      c.fillStyle = '#888780'; c.font = '500 11px sans-serif'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      c.fillText(TC[a.type].label.toUpperCase(), PAD + 32, firstLineY);
+      c.fillStyle = '#2C2C2A'; c.font = NOTE_FONT;
+      lines.forEach((line, i) => c.fillText(line, NOTE_X, firstLineY + i * LINE_H));
+      cy += rowH + 6;
+    });
+  }
+  return ec;
+}
+
+async function copyToClipboard() {
+  const s = curIdx >= 0 ? sessions[curIdx] : null;
+  if (!s || !s.img) { showStatus('Upload a screenshot first.', false); return; }
+  const btn = document.getElementById('copy-btn');
+  btn.innerHTML = 'Copying…'; btn.disabled = true;
+  try {
+    const ec   = buildExportCanvas(s);
+    const blob = await new Promise(res => ec.toBlob(res, 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    showStatus('✓ Copied to clipboard — paste anywhere with Cmd/Ctrl+V.', true);
+    btn.innerHTML = '✓ Copied!';
+    setTimeout(() => { btn.innerHTML = COPY_ICON; btn.disabled = false; }, 2500);
+  } catch (err) {
+    btn.innerHTML = COPY_ICON; btn.disabled = false;
+    downloadFallback(s, 'design-review.png');
+    showStatus('Clipboard blocked — saved as download instead.', true);
+  }
+}
+
+function downloadImage() {
+  const s = curIdx >= 0 ? sessions[curIdx] : null;
+  if (!s || !s.img) { showStatus('Upload a screenshot first.', false); return; }
+  const btn = document.getElementById('dl-btn');
+  btn.innerHTML = 'Saving…'; btn.disabled = true;
+  downloadFallback(s, (s.name || 'design-review') + '-annotated.png');
+  showStatus('✓ Downloaded as ' + (s.name || 'design-review') + '-annotated.png', true);
+  btn.innerHTML = DL_ICON; btn.disabled = false;
+}
+
+function downloadFallback(s, filename) {
+  const ec   = buildExportCanvas(s);
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = ec.toDataURL('image/png');
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+</script>
+</body>
+</html>
